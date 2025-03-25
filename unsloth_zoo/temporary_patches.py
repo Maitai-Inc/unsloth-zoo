@@ -14,11 +14,12 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import re
-from typing import Union, List, Any, Tuple, Dict, Callable, Optional
 import inspect
-import torch
 import os
+import re
+from typing import List, Optional, Tuple, Union
+
+import torch
 
 UNSLOTH_COMPILE_DEBUG         = os.environ.get("UNSLOTH_COMPILE_DEBUG",         "0") == "1"
 UNSLOTH_COMPILE_MAXIMUM       = os.environ.get("UNSLOTH_COMPILE_MAXIMUM",       "0") == "1"
@@ -40,15 +41,8 @@ def patch_Gemma3Processor():
     except:
         return
     from transformers.models.gemma3.processing_gemma3 import (
-        ImageInput,
-        PreTokenizedInput,
-        Unpack,
-        Gemma3ProcessorKwargs,
-        make_nested_list_of_images,
-        TextInput,
-        BatchFeature,
-        to_py_obj,
-    )
+        BatchFeature, Gemma3ProcessorKwargs, ImageInput, PreTokenizedInput,
+        TextInput, Unpack, make_nested_list_of_images, to_py_obj)
     def __call__(
         self,
         images: ImageInput = None,
@@ -77,7 +71,6 @@ def patch_Gemma3Processor():
                     images = None
                 else:
                     raise ValueError(e)
-        pass
         if isinstance(text, str):
             text = [text]
         elif not isinstance(text, list) and not isinstance(text[0], str):
@@ -142,7 +135,6 @@ def patch_Gemma3Processor():
         # text_inputs = {k: v.tolist() for k, v in text_inputs.items()}  # in case user requested list inputs
         text_inputs["token_type_ids"] = mm_token_type_ids#.tolist()
         return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.processing_gemma3.Gemma3Processor.__call__).parameters
     new_keys = inspect.signature(__call__).parameters
     if old_keys != new_keys:
@@ -150,7 +142,6 @@ def patch_Gemma3Processor():
     else:
         transformers.models.gemma3.processing_gemma3.Gemma3Processor.__call__ = __call__
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3Processor)
 
 
@@ -160,12 +151,7 @@ def patch_Gemma3ForConditionalGeneration():
     except:
         return
     from transformers.models.gemma3.modeling_gemma3 import (
-        HybridCache,
-        Gemma3CausalLMOutputWithPast,
-        logger,
-        is_torchdynamo_compiling,
-        Cache,
-    )
+        Cache, Gemma3CausalLMOutputWithPast, is_torchdynamo_compiling, logger)
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -251,7 +237,6 @@ def patch_Gemma3ForConditionalGeneration():
         if labels is not None and attention_mask is not None:
             attention_mask = attention_mask.to(device = labels.device)
             labels[attention_mask == 0] = -100
-        pass
         outputs = self.language_model(
             labels=labels,
             attention_mask=causal_mask,
@@ -304,7 +289,6 @@ def patch_Gemma3ForConditionalGeneration():
             attentions=outputs.attentions,
             image_hidden_states=image_features if pixel_values is not None else None,
         )
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3ForConditionalGeneration.forward).parameters
     new_keys = inspect.signature(forward).parameters
     if old_keys != new_keys:
@@ -312,7 +296,6 @@ def patch_Gemma3ForConditionalGeneration():
     else:
         transformers.models.gemma3.modeling_gemma3.Gemma3ForConditionalGeneration.forward = forward
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3ForConditionalGeneration)
 
 
@@ -320,10 +303,8 @@ def patch_Gemma3ForConditionalGeneration_causal_mask():
     if os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") == "0": return
     try: import transformers.models.gemma3.modeling_gemma3
     except: return
-    from transformers.models.gemma3.modeling_gemma3 import (
-        StaticCache,
-        HybridCache,
-    )
+    from transformers.models.gemma3.modeling_gemma3 import (HybridCache,
+                                                            StaticCache)
     def _update_causal_mask(
         self,
         attention_mask,
@@ -392,7 +373,6 @@ def patch_Gemma3ForConditionalGeneration_causal_mask():
             )
 
         return causal_mask
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3ForConditionalGeneration._update_causal_mask).parameters
     new_keys = inspect.signature(_update_causal_mask).parameters
     if old_keys != new_keys:
@@ -400,7 +380,6 @@ def patch_Gemma3ForConditionalGeneration_causal_mask():
     else:
         transformers.models.gemma3.modeling_gemma3.Gemma3ForConditionalGeneration._update_causal_mask = _update_causal_mask
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3ForConditionalGeneration_causal_mask)
 
 
@@ -415,7 +394,6 @@ def patch_Gemma3TextScaledWordEmbedding():
             padding_idx = self.padding_idx,
         )
         return input_embeds.to(torch.float32) * self.embed_scale
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3TextScaledWordEmbedding.forward).parameters
     new_keys = inspect.signature(forward).parameters
     if old_keys != new_keys:
@@ -424,7 +402,6 @@ def patch_Gemma3TextScaledWordEmbedding():
         forward = torch.compile(forward, fullgraph = True, dynamic = True, options = torch_compile_options)
         transformers.models.gemma3.modeling_gemma3.Gemma3TextScaledWordEmbedding.forward = forward
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3TextScaledWordEmbedding)
 
 
@@ -436,7 +413,6 @@ def patch_Gemma3RMSNorm():
         x = x.to(torch.float32)
         output = x * torch.rsqrt(x.square().mean(-1, keepdim = True) + self.eps)
         return output * (1.0 + self.weight.float())
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3RMSNorm.forward).parameters
     new_keys = inspect.signature(forward).parameters
     if old_keys != new_keys:
@@ -445,7 +421,6 @@ def patch_Gemma3RMSNorm():
         forward = torch.compile(forward, fullgraph = True, dynamic = True, options = torch_compile_options)
         transformers.models.gemma3.modeling_gemma3.Gemma3RMSNorm.forward = forward
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3RMSNorm)
 
 
@@ -457,7 +432,6 @@ def patch_Gemma3MLP():
         x = x.to(torch.float16)
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj.to(torch.float32)
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3MLP.forward).parameters
     new_keys = inspect.signature(forward).parameters
     if old_keys != new_keys:
@@ -466,7 +440,6 @@ def patch_Gemma3MLP():
         forward = torch.compile(forward, fullgraph = False, dynamic = True, options = torch_compile_options)
         transformers.models.gemma3.modeling_gemma3.Gemma3MLP.forward = forward
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3MLP)
 
 
@@ -478,14 +451,7 @@ def patch_Gemma3Attention():
     try: import transformers.models.gemma3.modeling_gemma3
     except: return
     from transformers.models.gemma3.modeling_gemma3 import (
-        Cache,
-        Unpack,
-        FlashAttentionKwargs,
-        apply_rotary_pos_emb,
-        ALL_ATTENTION_FUNCTIONS,
-        logger,
-        eager_attention_forward,
-    )
+        Cache, FlashAttentionKwargs, Unpack, apply_rotary_pos_emb)
     scaled_dot_product_attention = torch.nn.functional.scaled_dot_product_attention
     def forward(
         self,
@@ -497,12 +463,36 @@ def patch_Gemma3Attention():
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
+        #hidden_shape = (*input_shape, -1, self.head_dim)
+        #print("hidden_states shape:", hidden_states.shape)
+        # If hidden states has 4 dimensions with size 1 in any dimension except the last,
+        # squeeze those dimensions
+        if hidden_states.ndim == 4:
+            hidden_states = hidden_states.squeeze(
+                1
+            )  # Squeeze dimension 1 if it's size 1
 
-        hidden_states = hidden_states.to(downcast_dtype)
-        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        batch_size, seq_len, hidden_size = hidden_states.shape
+
+        query_states = (
+            self.q_proj(hidden_states)
+            .view(batch_size, seq_len, self.config.num_attention_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        key_states = (
+            self.k_proj(hidden_states)
+            .view(batch_size, seq_len, self.config.num_key_value_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        value_states = (
+            self.v_proj(hidden_states)
+            .view(batch_size, seq_len, self.config.num_key_value_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+
+        # query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        # key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        # value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
         query_states = self.q_norm(query_states)
         key_states = self.k_norm(key_states)
@@ -560,7 +550,6 @@ def patch_Gemma3Attention():
         attn_output = attn_output.reshape(*input_shape, -1)#.contiguous()
         attn_output = self.o_proj(attn_output)
         return attn_output, None
-    pass
     old_keys = inspect.signature(transformers.models.gemma3.modeling_gemma3.Gemma3Attention.forward).parameters
     new_keys = inspect.signature(forward).parameters
     if old_keys != new_keys:
@@ -569,5 +558,4 @@ def patch_Gemma3Attention():
         forward = torch.compiler.disable(forward, recursive = False)
         transformers.models.gemma3.modeling_gemma3.Gemma3Attention.forward = forward
     return
-pass
 TEMPORARY_PATCHES.append(patch_Gemma3Attention)

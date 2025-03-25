@@ -28,16 +28,12 @@ import importlib.util
 import numpy as np
 import os
 import torch
-import subprocess
-import types
-import time
 import logging
 import tempfile
 import sys
 from .utils import (
     Version,
     is_main_process,
-    is_distributed,
     distributed_function,
 )
 import triton
@@ -45,7 +41,6 @@ import regex
 from .peft_utils import get_lora_layer_modules
 from importlib.metadata import version as importlib_version
 from packaging.version import Version
-import functools
 from .compiler_replacements import compiler_replacements
 
 # Compiled cache location
@@ -70,13 +65,11 @@ if importlib.util.find_spec("unsloth_studio") is None:
     UNSLOTH_STUDIO_ENABLED = False
 else:
     UNSLOTH_STUDIO_ENABLED = os.environ.get("UNSLOTH_STUDIO_DISABLED", "0") == "0"
-pass
 
 # Ignore logging messages
 class HideLoggingMessage(logging.Filter):
     def __init__(self, text): self.text = text
     def filter(self, x): return not (self.text in x.getMessage())
-pass
 
 DISABLED_KEYWORDS = [
     "select_best_resolution", # Llava NeXT errors out
@@ -175,11 +168,9 @@ def get_transformers_model_type(
             if model_type in name.lower():
                 all_model_types.add(model_type)
                 break
-    pass
 
     all_model_types = list(all_model_types)
     return all_model_types
-pass
 
 
 # Empty causal mask
@@ -221,8 +212,6 @@ def replace_with_grouped_query_attention(module, source):
                     "dropout_p=self.attention_dropout if self.training else 0.0, "\
                     "enable_gqa=self.num_key_value_groups != 1,",
                 )
-        pass
-    pass
 
     source = re.sub(
         r"if output_attentions\:.+?return super\(\)\.forward.+?\)",
@@ -231,7 +220,6 @@ def replace_with_grouped_query_attention(module, source):
         flags = re.DOTALL | re.MULTILINE,
     )
     return source
-pass
 
 def _get_compile_folder(use_tempfile = False):
     global UNSLOTH_COMPILE_LOCATION
@@ -259,12 +247,10 @@ def _get_compile_folder(use_tempfile = False):
                 f"Unsloth: We'll be using `{location}` for temporary Unsloth patches."
             )
     return location, UNSLOTH_COMPILE_USE_TEMP
-pass
 
 def get_compile_folder(use_tempfile = False):
     location, UNSLOTH_COMPILE_USE_TEMP = distributed_function(2, _get_compile_folder, use_tempfile)
     return location, UNSLOTH_COMPILE_USE_TEMP
-pass
 
 def create_new_function(
     name,
@@ -284,13 +270,11 @@ def create_new_function(
         spaces = new_source.find("def")
         new_source = new_source.split("\n")
         new_source = "\n".join(x[spaces:] for x in new_source)
-    pass
 
     if add_torch_compile:
         new_source = \
             "@torch.compile(fullgraph = True, dynamic = True, options = torch_compile_options)\n"\
             f"{new_source}"
-    pass
 
     # Import items to make the function executable
     items = [x for x in functions if ((x in new_source) and (x != name) and not (f"def {x}(" in new_source))]
@@ -344,7 +328,6 @@ def create_new_function(
                 versions = file_source[:file_source.find('__UNSLOTH_VERSIONING__')]
                 if versioning[:versioning.find('__UNSLOTH_VERSIONING__')] != versions:
                     overwrite = True
-    pass
 
     # Check location
     def write_file(function_location, write_new_source):
@@ -353,7 +336,6 @@ def create_new_function(
             file.flush()
             os.fsync(file.fileno())
         return None
-    pass
 
     if overwrite or not os.path.isfile(function_location):
         try:
@@ -366,9 +348,6 @@ def create_new_function(
                 compile_folder, UNSLOTH_COMPILE_USE_TEMP = get_compile_folder(use_tempfile = True)
                 function_location = os.path.join(compile_folder, f"{name}.py")
                 distributed_function(1, write_file, function_location, write_new_source)
-            pass
-        pass
-    pass
 
     # Now import modules! Use a tempfile if it fails on the first try!
     old_path = None
@@ -385,7 +364,6 @@ def create_new_function(
         # Try standard import
         new_module = importlib.import_module(name)
         return new_module, old_path
-    pass
 
     try:
         new_module, old_path = import_module(compile_folder, name)
@@ -404,7 +382,6 @@ def create_new_function(
                 new_module = None
                 if is_main_process():
                     print(f"Standard import failed for {name}: {e}. Using spec.loader.exec_module instead!")
-        pass
         # Fallback to direct module loading
         if new_module is None:
             try:
@@ -416,7 +393,6 @@ def create_new_function(
                 spec.loader.exec_module(new_module)
             except Exception as e:
                 raise RuntimeError(f"Direct module loading failed for {name}: {e}")
-        pass
     finally:
         # Restore original sys.path if we modified it
         if old_path is not None:
@@ -426,7 +402,6 @@ def create_new_function(
         raise ImportError(f'Unsloth: Cannot import {name} from {UNSLOTH_COMPILE_LOCATION}')
 
     return new_module
-pass
 
 
 def create_standalone_class(
@@ -477,7 +452,6 @@ def create_standalone_class(
         value = str(value)
         if   value.startswith("**"): keys[j] = "**" + keys[j]
         elif value.startswith("*"):  keys[j] = "*"  + keys[j]
-    pass
     parameters = ", ".join(keys)
 
     # Now create the forward function!
@@ -489,7 +463,6 @@ def create_standalone_class(
         parameters += ", **loss_kwargs"
         definition = re.sub(r"(\,[\n][\s]{1,}\))", r",**loss_kwargs\1", definition)
         source = re.sub(r"(\,[\n]\) \-\>)", r",**loss_kwargs\1", source)
-    pass
 
     source = f"{compile}\n{source}\n"
 
@@ -508,7 +481,6 @@ def create_standalone_class(
     # Fix Gemma 3 ignore_index being not set!
     source = source.replace("self.config.ignore_index", "-100")
     return source
-pass
 
 
 _cross_entropy_code = """
@@ -628,7 +600,7 @@ else:
             output_logits = output_logits * logit_scale_multiply
         if logit_scale_divide != 0:
             output_logits = output_logits / logit_scale_divide
-        if logit_softcapping != 0:
+        if logit_softcapping and logit_softcapping != 0:
             output_logits = output_logits / logit_softcapping
             output_logits = torch.tanh(output_logits)
             output_logits = output_logits * logit_softcapping
@@ -747,7 +719,7 @@ elif self.loss_function.__name__.endswith("ForCausalLMLoss") and labels is not N
             output_logits = output_logits * logit_scale_multiply
         if logit_scale_divide != 0:
             output_logits = output_logits / logit_scale_divide
-        if logit_softcapping != 0:
+        if logit_softcapping and logit_softcapping != 0:
             output_logits = output_logits / logit_softcapping
             output_logits = torch.tanh(output_logits)
             output_logits = output_logits * logit_softcapping
@@ -855,7 +827,7 @@ if labels is not None:
             output_logits = output_logits * logit_scale_multiply
         if logit_scale_divide != 0:
             output_logits = output_logits / logit_scale_divide
-        if logit_softcapping != 0:
+        if logit_softcapping and logit_softcapping != 0:
             output_logits = output_logits / logit_softcapping
             output_logits = torch.tanh(output_logits)
             output_logits = output_logits * logit_softcapping
@@ -1065,9 +1037,7 @@ def apply_fused_lm_head(forward):
             forward,
         )
         return forward
-    pass
     return forward
-pass
 
 
 def test_apply_fused_lm_head():
@@ -1098,8 +1068,6 @@ def test_apply_fused_lm_head():
         print(name)
         print(apply_fused_lm_head(forward))
         print("=" * 30)
-    pass
-pass
 
 
 # Patch remaining functions
@@ -1120,19 +1088,16 @@ def convert_attention_masks_to_bool(module, old_source):
         for split in all_splits:
             if re.search(re.escape(var) + ".+?" + r"torch\.finfo\(.+?\)\.min", split):
                 good_vars.append(var)
-    pass
     if len(good_vars) == 0: return old_source
     good_vars = set(good_vars)
     final = all_splits[-1]
     for var in good_vars:
         if len(var) == 0: continue
         final = final.replace(var, var + f"!=torch.finfo({var}.dtype).min")
-    pass
     all_splits[-1] = final
     new_source = "\n".join(all_splits)
     print(f"Unsloth: Boolean mask for {module}")
     return new_source
-pass
 
 
 replace_gradient_checkpointing = """
@@ -1166,7 +1131,6 @@ def patch_gradient_checkpointing(module, source):
     if len(find) == 0:
         print(f"Unsloth: Failed patching {module} with gradient checkpointing")
         return None
-    pass
 
     layer, spaces, args = find[0]
     span = re.search(finder, forward).span(0)
@@ -1184,7 +1148,6 @@ def patch_gradient_checkpointing(module, source):
     spaces = init.find("def")
     init = init + "\n" + (spaces + 4) * " " + "self.gradient_checkpointing = False\n\n"
     return init, forward
-pass
 
 
 # Torch.compiling makes things slower - rather just leave it as addmm
@@ -1275,7 +1238,6 @@ def patch_lora_forwards(torch_compile_options):
             replace = "return lora_forward(result, lora_A, lora_B, dropout, x, scaling)"
             source = source.replace(old1, replace)
             source = source.replace(old2, replace)
-        pass
 
         # Update function name
         source = source.replace(
@@ -1300,7 +1262,6 @@ def patch_lora_forwards(torch_compile_options):
         else:
             for replace in replacements:
                 source = source.replace(replace, "")
-        pass
         source = source.replace(
             "self._check_forward_args(x, *args, **kwargs)",
             "",
@@ -1322,13 +1283,10 @@ def patch_lora_forwards(torch_compile_options):
                     f"\ntorch_compile_options = {torch_compile_options}\n"
             ).unsloth_forward
             exec(f"{parent}.{child}.forward = forward", globals(), locals())
-        pass
-    pass
 
     if success <= 5:
         print("Unsloth: Not an error, but could not optimize some PEFT modules.")
     return
-pass
 
 
 def patch_residual_stream(source):
@@ -1371,9 +1329,7 @@ def patch_residual_stream(source):
             f"if type(s) is float else "\
             f"torch.addcmul(residual, {h}, s)\n"
         source = source.replace(full_match, replace)
-    pass
     return source
-pass
 
 
 def patch_gradient_accumulation(modeling_file, module):
@@ -1405,7 +1361,6 @@ def patch_gradient_accumulation(modeling_file, module):
         print(f"Unsloth: Patching {inner_class.__name__} within {module.__name__} to fix gradient accumulation.")
         regex_find = f"{call_class}\(([^\)]{{1,}})\)"
         source = re.sub(regex_find, rf"{call_class}(\1, **kwargs)", source, flags = re.DOTALL | re.MULTILINE)
-    pass
 
     if total_has_kwargs:
         # Fix **kwargs for function def
@@ -1420,7 +1375,6 @@ def patch_gradient_accumulation(modeling_file, module):
     # Now replace old forward with new one
     source = inspect.getsource(module).replace(inspect.getsource(forward), source)
     return source
-pass
 
 
 def unsloth_compile_transformers(
@@ -1454,7 +1408,6 @@ def unsloth_compile_transformers(
     disable = disable or (os.environ.get("UNSLOTH_COMPILE_DISABLE", "0") == "1")
     if fast_residual_stream:
         raise NotImplementedError("Unsloth: Fast residual stream optimization makes things slower!")
-    pass
 
     model_location = f"transformers.models.{model_type}.modeling_{model_type}"
     exec(f"import {model_location}", globals())
@@ -1482,7 +1435,6 @@ def unsloth_compile_transformers(
         os.environ["UNSLOTH_RETURN_LOGITS"] = UNSLOTH_RETURN_LOGITS
     else:
         UNSLOTH_RETURN_LOGITS = os.environ["UNSLOTH_RETURN_LOGITS"] == "1"
-    pass
 
     # Fullgraph
     UNSLOTH_FULLGRAPH = "1" if fullgraph else "0"
@@ -1490,14 +1442,12 @@ def unsloth_compile_transformers(
         os.environ["UNSLOTH_FULLGRAPH"] = UNSLOTH_FULLGRAPH
     else:
         UNSLOTH_FULLGRAPH = os.environ["UNSLOTH_FULLGRAPH"] == "1"
-    pass
     UNSLOTH_FULLGRAPH = UNSLOTH_FULLGRAPH == "1"
 
     # Patch PEFT lora forwards
     if (not disable) and fast_lora_forwards:
         print("Unsloth: Patching LoRA to make it faster")
         patch_lora_forwards(torch_compile_options)
-    pass
 
     modeling_file.__UNSLOTH_PATCHED__ = True
     functions = dir(modeling_file)
@@ -1521,7 +1471,6 @@ def unsloth_compile_transformers(
     for module in torch_modules:
         source = eval(f"modeling_file.{module}")
         if hasattr(source, "forward"): final_torch_modules.append(module)
-    pass
     torch_modules = final_torch_modules
 
     # Remove functions which have gradient checkpointing in them
@@ -1539,7 +1488,6 @@ def unsloth_compile_transformers(
             scaled_dot_product_attention_modules.append(module)
         elif "nn.functional.softmax" in source or "flash_attn_varlen_func" in source or "_flash_attention_forward" in source:
             full_attention_modules.append(module)
-    pass
     removal = set(
         scaled_dot_product_attention_modules + \
         full_attention_modules + \
@@ -1556,7 +1504,6 @@ def unsloth_compile_transformers(
         called = re.findall(r"[\s]{1,}" + re.escape(function) + "\(.+?\)", full_source, flags = re.DOTALL)
         if len(defined) != 0 and len(called) != 0:
             called_functions.append(function)
-    pass
 
     # Check if fullgraph can be used
     torch_modules = {x : True for x in torch_modules}
@@ -1570,9 +1517,7 @@ def unsloth_compile_transformers(
         for another_module in torch_modules:
             if another_module in source:
                 fullgraph = fullgraph and torch_modules[another_module]
-        pass
         torch_modules[module] = fullgraph if UNSLOTH_FULLGRAPH else False
-    pass
 
     # Get other classes
     other_classes = re.findall(r"class ([^\s]{1,})\(.+?\)", full_source)
@@ -1621,10 +1566,7 @@ def unsloth_compile_transformers(
                     flags = re.DOTALL,
                 )
                 disabled_scaled_dot_product_attention_modules.append(module)
-            pass
-        pass
         scaled_dot_product_attention_modules[module] = new_source
-    pass
 
     all_standalone_classes = {}
 
@@ -1643,10 +1585,7 @@ def unsloth_compile_transformers(
                 if x in source:
                     can_remove = False
                     break
-            pass
             if can_remove: remove_causal_masks.append(module)
-        pass
-    pass
 
     # Remove modules which have attention mechanisms
     # since torch.compile will compile too many kernels
@@ -1663,20 +1602,17 @@ def unsloth_compile_transformers(
 
             print(f"Unsloth: Will not compile {module} since it looks like it calls attention modules!")
             bad_torch_modules.add(module)
-        pass
 
         if "self.encoder" in source or "BaseModelOutput" in source:
 
             print(f"Unsloth: Will not compile {module} since it looks like a vision encoder!")
             bad_torch_modules.add(module)
-        pass
 
         # Check if creating arrays in inside the function
         # Error: DataDependentOutputException: aten._local_scalar_dense.default
         if "torch.arange(" in source or "torch.zeros(" in source or "torch.ones(" in source:
             print(f"Unsloth: Failed compiling function {module} since array creations are done.")
             bad_torch_modules.add(module)
-        pass
 
         # Check for residual streams optimizations
         if fast_residual_stream and "residual" in source:
@@ -1695,9 +1631,6 @@ def unsloth_compile_transformers(
                     all_standalone_classes[module] = new_module
                 except:
                     continue
-            pass
-        pass
-    pass
     # Add back to functions since failed compiling
     functions += list(bad_torch_modules)
 
@@ -1716,8 +1649,6 @@ def unsloth_compile_transformers(
                 all_standalone_classes[module] = new_module
             except:
                 continue
-        pass
-    pass
 
     # SDPA
     if compile_attention:
@@ -1727,7 +1658,6 @@ def unsloth_compile_transformers(
                     module,
                     forward_source,
                 )
-            pass
             try:
                 new_module = create_standalone_class(
                     module,
@@ -1741,7 +1671,6 @@ def unsloth_compile_transformers(
                 all_standalone_classes[module] = new_module
             except:
                 continue
-        pass
 
         # Patch full attention modules
         for module in full_attention_modules:
@@ -1757,8 +1686,6 @@ def unsloth_compile_transformers(
                 all_standalone_classes[module] = new_module
             except:
                 continue
-        pass
-    pass
 
     # Remove causal masks
     do_not_remove = False
@@ -1767,7 +1694,6 @@ def unsloth_compile_transformers(
             do_not_remove = True
             print(f"Unsloth: Will not remove causal mask for {model_location} since it's a VLM!")
             break
-    pass
     for module in remove_causal_masks:
         if do_not_remove: continue
 
@@ -1781,7 +1707,6 @@ def unsloth_compile_transformers(
 
         exec(f"{model_location}.{module}._update_causal_mask = no_update_causal_mask", globals())
         print(f"Unsloth: Removed causal mask for {module} to reduce memory usage.")
-    pass
 
     # Patch LM Head
     if fuse_lm_head:
@@ -1812,10 +1737,6 @@ def unsloth_compile_transformers(
                     )
                     print(f"Unsloth: Fast fused linear cross entropy patch for {module}.")
                     all_standalone_classes[module] = new_module
-                pass
-            pass
-        pass
-    pass
 
     # Allow gradient checkpointing if not enabled
     if gradient_checkpointing:
@@ -1837,8 +1758,6 @@ def unsloth_compile_transformers(
             )
             all_standalone_classes[module] = new_module
             print(f"Unsloth: Patched {module} by adding gradient checkpointing")
-        pass
-    pass
 
     # Manually replace hand written parts
     if manual_replacements:
@@ -1849,8 +1768,6 @@ def unsloth_compile_transformers(
 
                 print(f"Unsloth: Manual replacement for {module}")
                 all_standalone_classes[module] = compiler_replacements[module]
-        pass
-    pass
 
     # Patch Trainer
     from transformers.trainer import Trainer
@@ -1862,14 +1779,12 @@ def unsloth_compile_transformers(
             inner_training_loop = Trainer._original_training_loop
     except:
         raise RuntimeError('Unsloth: Unsuccessfully patched inner_training_loop')
-    pass
 
     import transformers.trainer
     items_in_trainer = dir(transformers.trainer)
     good_items = []
     for item in items_in_trainer:
         if item in inner_training_loop: good_items.append(item)
-    pass
     exec("from transformers.trainer import (" + ", ".join(x for x in good_items) + ")", globals())
 
     start = re.search(r'logger\.info\([\"\'].+?Running training', inner_training_loop).span(0)[0]
@@ -1941,7 +1856,6 @@ def unsloth_compile_transformers(
             for param in params:
                 if not param in cleaned_code_section:
                     bad_params.append(param)
-            pass
             if len(bad_params) == 0: continue
 
             for bad_param in bad_params:
@@ -1951,14 +1865,12 @@ def unsloth_compile_transformers(
                     str(parameters),
                     flags = re.DOTALL,
                 )
-            pass
             parameters = f"def {module}" + parameters + code_section
             print(f"Unsloth: Fixed up function {module}.")
 
             parameters = \
                 f"@torch.compile(fullgraph = {UNSLOTH_FULLGRAPH}, dynamic = True, options = torch_compile_options)\n{parameters}"
             all_standalone_classes[module] = parameters
-        pass
 
         for module in called_functions:
             if module in all_standalone_classes: continue
@@ -1974,15 +1886,12 @@ def unsloth_compile_transformers(
                 if keyword in source:
                     bad = True
                     break
-            pass
             if not bad:
                 source = f"@torch.compile(fullgraph = {UNSLOTH_FULLGRAPH}, dynamic = True, options = torch_compile_options)\n{source}"
                 print(f"Unsloth: Compiled function {module}.")
             else:
                 print(f"Unsloth: Cannot compile function {module} since disabled keyword is in it.")
             all_standalone_classes[module] = source
-        pass
-    pass
 
     # Fix gradient accumulation issues if there's no **kwargs
     if accurate_accumulation:
@@ -1992,16 +1901,12 @@ def unsloth_compile_transformers(
             if module in all_standalone_classes:
                 print(f"Unsloth: Will override already patched {module} with gradient accumulation fix.")
             all_standalone_classes[module] = new_source
-        pass
-    pass
 
     # Order all components
     final_all_standalone_classes = []
     for module in ordered_functions:
         if module in all_standalone_classes:
             final_all_standalone_classes.append(all_standalone_classes[module])
-        pass
-    pass
 
     all_code = "\n\n".join(final_all_standalone_classes)
 
@@ -2053,16 +1958,12 @@ def unsloth_compile_transformers(
                 exec( f"combined_module.torch.nn.{module}.forward = forward", globals(), locals())
                 try: exec(  f"combined_module.nn.{module}.forward = forward", globals(), locals())
                 except: pass
-            pass
-        pass
-    pass
     # Quick exit
     if combined_module is None or disable: return
 
     # Import and replace with new module
     for module in all_standalone_classes.keys():
         exec(f"{model_location}.{module} = combined_module.{module}", globals(), locals())
-    pass
 
     # Finally edit dictionary items inside the target file
     replaced_classes = all_standalone_classes.keys()
@@ -2079,12 +1980,7 @@ def unsloth_compile_transformers(
                     exec(f"{model_location}.{check}['{key}'] = combined_module.{replaced_class}", globals(), locals())
                     # print(f"Unsloth: Replacing {check} with {replaced_class}")
                     break
-                pass
-            pass
-        pass
-    pass
     return
-pass
 
 # Unsloth Zoo - Utilities for Unsloth
 # Copyright 2023-present Daniel Han-Chen, Michael Han-Chen & the Unsloth team. All rights reserved.
